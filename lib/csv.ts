@@ -84,19 +84,26 @@ export function expandRowToPayload(row: CsvRow): ImportGroupPayload {
     relationship: row.relationship,
     max_attendees: 1 + row.companionCount,
     primary_name: row.name,
+    primary_title: row.title,
     companion_names: companions,
   };
 }
 
-export const CSV_HEADERS = ['Nombre', 'Parentezco', 'Acompañante', 'Nombre acompañantes'] as const;
+export const CSV_HEADERS = [
+  'Nombre',
+  'Parentezco',
+  'Acompañante',
+  'Nombre acompañantes',
+  'Título',
+] as const;
 
 export function generateCsvTemplate(): string {
   const example = [
-    'Nombre,Parentezco,Acompañante,Nombre acompañantes',
-    '"Paola Rivas","mamá del novio",3,"Fabio Reyes, Sebastián Rivas, Andrés Felipe Rivas"',
-    '"Erick Gonzalez","Amigo",0,',
-    '"Valeria Llanos","Amigo",1,"Karol"',
-    '"Shalma Urazán","Amigo",1,',
+    'Nombre,Parentezco,Acompañante,Nombre acompañantes,Título',
+    '"Paola Rivas","mamá del novio",3,"Fabio Reyes, Sebastián Rivas, Andrés Felipe Rivas",Sra.',
+    '"Erick Gonzalez","Amigo",0,,Sr.',
+    '"Valeria Llanos","Amigo",1,"Karol",Srita.',
+    '"Shalma Urazán","Amigo",1,,',
   ];
   return example.join('\n');
 }

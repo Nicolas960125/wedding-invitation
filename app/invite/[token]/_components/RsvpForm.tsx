@@ -11,10 +11,21 @@ import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import { submitRsvpAction, type RsvpActionState } from '@/actions/rsvp';
 import { SpotifySearch } from './SpotifySearch';
 import type { SongItem } from '@/lib/schemas/rsvp';
+import { GUEST_TITLES, type GuestTitle } from '@/lib/schemas/csvRow';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
+
+const TITLE_NONE = '__none__';
 
 type GuestUI = {
   id: string;
   fullName: string;
+  title: GuestTitle | null;
   isPrimary: boolean;
   attending: 'yes' | 'no' | null;
   dietaryRestrictions: string;
@@ -42,6 +53,7 @@ export function RsvpForm(props: Props) {
         guests: guests.map((g) => ({
           id: g.id,
           fullName: g.fullName.trim(),
+          title: g.title,
           attending: g.attending ?? 'pending',
           dietaryRestrictions: g.dietaryRestrictions.trim() || null,
         })),
@@ -94,14 +106,37 @@ export function RsvpForm(props: Props) {
                   </span>
                 )}
                 {isPlaceholder ? (
-                  <Input
-                    value={g.fullName}
-                    onChange={(e) => updateGuest(g.id, { fullName: e.target.value })}
-                    placeholder="Nombre del acompañante"
-                    className="max-w-xs"
-                  />
+                  <>
+                    <Select
+                      value={g.title ?? TITLE_NONE}
+                      onValueChange={(v) =>
+                        updateGuest(g.id, { title: v === TITLE_NONE ? null : (v as GuestTitle) })
+                      }
+                    >
+                      <SelectTrigger className="w-24" aria-label="Tratamiento">
+                        <SelectValue placeholder="—" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value={TITLE_NONE}>—</SelectItem>
+                        {GUEST_TITLES.map((t) => (
+                          <SelectItem key={t} value={t}>
+                            {t}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                    <Input
+                      value={g.fullName}
+                      onChange={(e) => updateGuest(g.id, { fullName: e.target.value })}
+                      placeholder="Nombre del acompañante"
+                      className="max-w-xs"
+                    />
+                  </>
                 ) : (
-                  <span className="font-medium">{g.fullName}</span>
+                  <span className="font-medium">
+                    {g.title ? `${g.title} ` : ''}
+                    {g.fullName}
+                  </span>
                 )}
               </div>
               <div className="mt-3">
