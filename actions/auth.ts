@@ -51,8 +51,9 @@ export async function signInAction(
 
   const supabase = await createClient();
   const siteUrl = process.env.NEXT_PUBLIC_SITE_URL?.trim() || 'http://localhost:3000';
-  const next = parsed.data.next ?? '/admin';
-  const redirectTo = `${siteUrl}/auth/confirm?next=${encodeURIComponent(next)}`;
+  // emailRedirectTo se rendea como {{ .RedirectTo }} en el template del magic link.
+  // El template le adjunta token_hash + type; el `next` lo decide el route /auth/confirm.
+  const redirectTo = `${siteUrl}/auth/confirm`;
 
   const { error } = await supabase.auth.signInWithOtp({
     email: parsed.data.email,

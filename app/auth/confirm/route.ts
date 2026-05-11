@@ -10,6 +10,7 @@ export async function GET(request: NextRequest) {
   const next = searchParams.get('next') ?? '/admin';
 
   if (!token_hash || !type) {
+    console.warn('[auth/confirm] missing params', { hasToken: !!token_hash, type });
     return NextResponse.redirect(new URL('/admin/login?error=invalid-link', request.url));
   }
 
@@ -17,6 +18,11 @@ export async function GET(request: NextRequest) {
   const { error } = await supabase.auth.verifyOtp({ type, token_hash });
 
   if (error) {
+    console.warn('[auth/confirm] verifyOtp failed', {
+      type,
+      tokenPrefix: token_hash.slice(0, 12),
+      error: { code: error.code, status: error.status, message: error.message, name: error.name },
+    });
     return NextResponse.redirect(new URL('/admin/login?error=expired-link', request.url));
   }
 
