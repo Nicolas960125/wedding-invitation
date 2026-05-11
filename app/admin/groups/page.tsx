@@ -10,10 +10,19 @@ import {
 import { Badge } from '@/components/ui/badge';
 import { InvitationActions } from '@/components/shared/InvitationActions';
 import { BulkPendingCopy } from './_components/BulkPendingCopy';
+import { GroupEditDialog, type GroupEditGuest } from './_components/GroupEditDialog';
+import type { GuestTitle } from '@/lib/schemas/csvRow';
 
 export const dynamic = 'force-dynamic';
 
-type GuestRow = { attending: boolean | null };
+type GuestRow = {
+  id: string;
+  full_name: string;
+  title: GuestTitle | null;
+  is_primary: boolean;
+  attending: boolean | null;
+  created_at: string;
+};
 
 export default async function AdminGroupsPage() {
   const admin = getAdminClient();
@@ -21,7 +30,7 @@ export default async function AdminGroupsPage() {
   const { data: groups } = await admin
     .from('guest_group')
     .select(
-      'id, token, display_name, relationship, max_attendees, responded_at, guest(id, attending)',
+      'id, token, display_name, relationship, max_attendees, responded_at, guest(id, full_name, title, is_primary, attending, created_at)',
     )
     .order('created_at', { ascending: false });
 
@@ -59,9 +68,21 @@ export default async function AdminGroupsPage() {
           </TableHeader>
           <TableBody>
             {list.map((g) => {
-              const yes = (g.guest ?? []).filter((x: GuestRow) => x.attending === true).length;
-              const no = (g.guest ?? []).filter((x: GuestRow) => x.attending === false).length;
+              const guestsRaw = (g.guest ?? []) as GuestRow[];
+              const yes = guestsRaw.filter((x) => x.attending === true).length;
+              const no = guestsRaw.filter((x) => x.attending === false).length;
               const link = `${siteUrl}/invite/${g.token}`;
+              const guestsForEdit: GroupEditGuest[] = [...guestsRaw]
+                .sort((a, b) => {
+                  if (a.is_primary !== b.is_primary) return a.is_primary ? -1 : 1;
+                  return a.created_at.localeCompare(b.created_at);
+                })
+                .map((x) => ({
+                  id: x.id,
+                  full_name: x.full_name,
+                  title: x.title,
+                  is_primary: x.is_primary,
+                }));
               return (
                 <TableRow key={g.id}>
                   <TableCell className="font-medium">{g.display_name}</TableCell>
@@ -79,11 +100,22 @@ export default async function AdminGroupsPage() {
                     )}
                   </TableCell>
                   <TableCell>
-                    <InvitationActions
-                      guestName={g.display_name}
-                      link={link}
-                      maxAttendees={g.max_attendees}
-                    />
+                    <div className="flex flex-wrap items-center gap-1">
+                      <GroupEditDialog
+                        group={{
+                          id: g.id,
+                          display_name: g.display_name,
+                          relationship: g.relationship,
+                          max_attendees: g.max_attendees,
+                          guests: guestsForEdit,
+                        }}
+                      />
+                      <InvitationActions
+                        guestName={g.display_name}
+                        link={link}
+                        maxAttendees={g.max_attendees}
+                      />
+                    </div>
                   </TableCell>
                 </TableRow>
               );

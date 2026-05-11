@@ -57,7 +57,7 @@ export default async function InvitePage({ params }: PageProps) {
 
   const { data: guests } = await admin
     .from('guest')
-    .select('id, full_name, is_primary, attending, dietary_restrictions')
+    .select('id, full_name, title, is_primary, attending, dietary_restrictions')
     .eq('group_id', group.id)
     .order('is_primary', { ascending: false })
     .order('created_at', { ascending: true });
@@ -150,6 +150,7 @@ export default async function InvitePage({ params }: PageProps) {
                     guests={(guests ?? []).map((g) => ({
                       id: g.id,
                       fullName: g.full_name,
+                      title: g.title ?? null,
                       isPrimary: g.is_primary,
                       attending:
                         g.attending === true ? 'yes' : g.attending === false ? 'no' : null,

@@ -1,10 +1,17 @@
 import { z } from 'zod';
+import { GUEST_TITLES } from './csvRow';
 
 export const attendingValueSchema = z.enum(['yes', 'no', 'pending']);
+
+export const guestTitleSchema = z
+  .union([z.enum(GUEST_TITLES), z.literal(''), z.null()])
+  .transform((v) => (v === '' || v === null ? null : v))
+  .optional();
 
 export const guestResponseSchema = z.object({
   id: z.string().uuid(),
   fullName: z.string().min(1, 'Nombre requerido').max(120),
+  title: guestTitleSchema,
   attending: attendingValueSchema.nullable(),
   dietaryRestrictions: z.string().max(200).nullable().optional(),
 });

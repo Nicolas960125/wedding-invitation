@@ -88,6 +88,7 @@ export async function submitRsvpAction(
       .from('guest')
       .update({
         full_name: guest.fullName,
+        title: guest.title ?? null,
         attending: guest.attending === 'yes' ? true : guest.attending === 'no' ? false : null,
         dietary_restrictions: guest.dietaryRestrictions ?? null,
         source: 'guest',
