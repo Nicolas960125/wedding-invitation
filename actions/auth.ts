@@ -50,7 +50,7 @@ export async function signInAction(
   }
 
   const supabase = await createClient();
-  const siteUrl = process.env.NEXT_PUBLIC_SITE_URL ?? 'http://localhost:3000';
+  const siteUrl = process.env.NEXT_PUBLIC_SITE_URL?.trim() || 'http://localhost:3000';
   const next = parsed.data.next ?? '/admin';
   const redirectTo = `${siteUrl}/auth/confirm?next=${encodeURIComponent(next)}`;
 

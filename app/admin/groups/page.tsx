@@ -34,7 +34,7 @@ export default async function AdminGroupsPage() {
     )
     .order('created_at', { ascending: false });
 
-  const siteUrl = process.env.NEXT_PUBLIC_SITE_URL ?? 'http://localhost:3000';
+  const siteUrl = process.env.NEXT_PUBLIC_SITE_URL?.trim() || 'http://localhost:3000';
   const list = groups ?? [];
   const pending = list.filter((g) => g.responded_at === null);
   const pendingForBulk = pending.map((g) => ({
