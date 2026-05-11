@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useTransition } from 'react';
+import { useEffect, useState, useTransition } from 'react';
 import { Pencil, Plus, Trash2, Scissors } from 'lucide-react';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
@@ -69,11 +69,19 @@ export function GroupEditDialog({ group }: Props) {
   const [newGuestName, setNewGuestName] = useState('');
   const [newGuestTitle, setNewGuestTitle] = useState<string>(TITLE_NONE);
 
-  const run = (fn: () => Promise<{ ok: boolean; message?: string; error?: string }>, successMsg?: string) => {
+  const run = (
+    fn: () => Promise<{ ok: boolean; message?: string; error?: string }>,
+    successMsg?: string,
+    onSuccess?: () => void,
+  ) => {
     startTransition(async () => {
       const res = await fn();
-      if (res.ok) toast.success(successMsg ?? res.message ?? 'Listo');
-      else toast.error(res.error ?? 'Error');
+      if (res.ok) {
+        toast.success(successMsg ?? res.message ?? 'Listo');
+        onSuccess?.();
+      } else {
+        toast.error(res.error ?? 'Error');
+      }
     });
   };
 
@@ -111,9 +119,11 @@ export function GroupEditDialog({ group }: Props) {
           title: newGuestTitle === TITLE_NONE ? null : (newGuestTitle as GuestTitle),
         }),
       'Invitado agregado',
+      () => {
+        setNewGuestName('');
+        setNewGuestTitle(TITLE_NONE);
+      },
     );
-    setNewGuestName('');
-    setNewGuestTitle(TITLE_NONE);
   };
 
   const removeGuest = (guestId: string) =>
@@ -150,10 +160,12 @@ export function GroupEditDialog({ group }: Props) {
           new_relationship: splitRelationship || null,
         }),
       'Grupo dividido',
+      () => {
+        setSplitSelection(new Set());
+        setSplitName('');
+        setSplitRelationship('');
+      },
     );
-    setSplitSelection(new Set());
-    setSplitName('');
-    setSplitRelationship('');
   };
 
   const removeGroup = () => {
@@ -335,6 +347,10 @@ type GuestRowProps = {
 function GuestRow({ guest, pending, splitChecked, onToggleSplit, onSave, onRemove, canRemove }: GuestRowProps) {
   const [name, setName] = useState(guest.full_name);
   const titleValue = guest.title ?? TITLE_NONE;
+
+  useEffect(() => {
+    setName(guest.full_name);
+  }, [guest.full_name]);
 
   return (
     <div className="bg-card flex flex-wrap items-end gap-2 rounded-md border p-2">
