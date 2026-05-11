@@ -10,6 +10,12 @@ export async function createClient() {
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
     {
+      auth: {
+        // implicit en lugar de PKCE: el token_hash que llega al /auth/confirm
+        // no depende de un code_verifier guardado en cookies, asi el magic link
+        // sobrevive cross-device, modo incognito y pre-fetch de anti-phishing.
+        flowType: 'implicit',
+      },
       cookies: {
         getAll() {
           return cookieStore.getAll();
