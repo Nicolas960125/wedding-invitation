@@ -122,23 +122,26 @@ export async function submitRsvpAction(
     }
   }
 
-  // Canciones: INSERT append-only con dedupe.
-  // Para canciones con uri: el unique index (group_id, uri) descarta duplicados.
-  // Para texto libre (uri null): consultamos lo ya guardado para no repetir el mismo label.
+  // Canciones: INSERT append-only con dedupe explicito por (group_id, uri o label).
+  // No usamos upsert/ON CONFLICT porque el unique index sobre uri es parcial
+  // (WHERE uri is not null) y PostgREST no acepta ON CONFLICT contra indexes parciales.
   const incomingSongs = data.songs ?? [];
   if (incomingSongs.length > 0) {
-    const { data: existingFree } = await admin
+    const { data: existing } = await admin
       .from('guest_group_song')
-      .select('label')
-      .eq('group_id', group.id)
-      .is('uri', null);
-    const existingFreeLabels = new Set(
-      (existingFree ?? []).map((r: { label: string }) => r.label.toLowerCase()),
-    );
+      .select('uri, label')
+      .eq('group_id', group.id);
+
+    const existingUris = new Set<string>();
+    const existingFreeLabels = new Set<string>();
+    for (const r of (existing ?? []) as { uri: string | null; label: string }[]) {
+      if (r.uri) existingUris.add(r.uri);
+      else existingFreeLabels.add(r.label.toLowerCase());
+    }
 
     const rowsToInsert = incomingSongs
       .filter((s) => {
-        if (s.uri) return true; // dedupe lo maneja el unique index
+        if (s.uri) return !existingUris.has(s.uri);
         return !existingFreeLabels.has(s.label.toLowerCase());
       })
       .map((s) => ({
@@ -149,9 +152,7 @@ export async function submitRsvpAction(
       }));
 
     if (rowsToInsert.length > 0) {
-      const { error: songErr } = await admin
-        .from('guest_group_song')
-        .upsert(rowsToInsert, { onConflict: 'group_id,uri', ignoreDuplicates: true });
+      const { error: songErr } = await admin.from('guest_group_song').insert(rowsToInsert);
       if (songErr) {
         return { ok: false, error: 'Error guardando canciones: ' + songErr.message };
       }
