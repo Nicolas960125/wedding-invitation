@@ -17,6 +17,9 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
             <Link href="/admin/groups" className="hover:underline">
               Grupos
             </Link>
+            <Link href="/admin/respuestas" className="hover:underline">
+              Respuestas
+            </Link>
             <Link href="/admin/import" className="hover:underline">
               Importar
             </Link>

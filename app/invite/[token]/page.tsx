@@ -117,14 +117,11 @@ export default async function InvitePage({ params }: PageProps) {
               <DressCode description={event.dressCode.description} />
             </AnimatedSection>
 
-            {event.registry.length > 0 && (
-              <>
-                <FloralDivider variant="heart" />
-                <AnimatedSection>
-                  <GiftRegistry items={event.registry} />
-                </AnimatedSection>
-              </>
-            )}
+            <FloralDivider variant="heart" />
+
+            <AnimatedSection>
+              <GiftRegistry items={event.registry} />
+            </AnimatedSection>
 
             <FloralDivider variant="heart" />
 
