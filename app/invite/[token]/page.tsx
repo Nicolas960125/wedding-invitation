@@ -3,7 +3,6 @@ import type { Metadata } from 'next';
 import { getAdminClient } from '@/lib/supabase/admin';
 import { isValidTokenShape } from '@/lib/tokens';
 import { getEventData } from '@/lib/event-data';
-import type { SongItem } from '@/lib/schemas/rsvp';
 import { HeroCountdown } from './_components/HeroCountdown';
 import { EventDetails } from './_components/EventDetails';
 import { DressCode } from './_components/DressCode';
@@ -46,7 +45,7 @@ export default async function InvitePage({ params }: PageProps) {
   const { data: group, error: groupErr } = await admin
     .from('guest_group')
     .select(
-      'id, token, display_name, relationship, max_attendees, message, songs, responded_at',
+      'id, token, display_name, relationship, max_attendees, responded_at',
     )
     .eq('token', token)
     .maybeSingle();
@@ -153,8 +152,8 @@ export default async function InvitePage({ params }: PageProps) {
                         g.attending === true ? 'yes' : g.attending === false ? 'no' : null,
                       dietaryRestrictions: g.dietary_restrictions ?? '',
                     }))}
-                    initialMessage={group.message ?? ''}
-                    initialSongs={(group.songs as SongItem[] | null) ?? []}
+                    initialMessage=""
+                    initialSongs={[]}
                   />
                 )}
               </div>

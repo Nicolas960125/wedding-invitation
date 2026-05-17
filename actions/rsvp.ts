@@ -101,17 +101,61 @@ export async function submitRsvpAction(
     }
   }
 
+  // Confirmacion del grupo (UPSERT del responded_at).
   const { error: groupUpdErr } = await admin
     .from('guest_group')
-    .update({
-      message: data.message ?? null,
-      songs: data.songs ?? [],
-      responded_at: new Date().toISOString(),
-    })
+    .update({ responded_at: new Date().toISOString() })
     .eq('id', group.id);
 
   if (groupUpdErr) {
     return { ok: false, error: 'Error guardando el grupo: ' + groupUpdErr.message };
+  }
+
+  // Dedicatoria: INSERT append-only. Si el invitado no escribe nada, no se inserta.
+  const messageText = data.message?.trim();
+  if (messageText) {
+    const { error: msgErr } = await admin
+      .from('guest_group_message')
+      .insert({ group_id: group.id, content: messageText });
+    if (msgErr) {
+      return { ok: false, error: 'Error guardando la dedicatoria: ' + msgErr.message };
+    }
+  }
+
+  // Canciones: INSERT append-only con dedupe.
+  // Para canciones con uri: el unique index (group_id, uri) descarta duplicados.
+  // Para texto libre (uri null): consultamos lo ya guardado para no repetir el mismo label.
+  const incomingSongs = data.songs ?? [];
+  if (incomingSongs.length > 0) {
+    const { data: existingFree } = await admin
+      .from('guest_group_song')
+      .select('label')
+      .eq('group_id', group.id)
+      .is('uri', null);
+    const existingFreeLabels = new Set(
+      (existingFree ?? []).map((r: { label: string }) => r.label.toLowerCase()),
+    );
+
+    const rowsToInsert = incomingSongs
+      .filter((s) => {
+        if (s.uri) return true; // dedupe lo maneja el unique index
+        return !existingFreeLabels.has(s.label.toLowerCase());
+      })
+      .map((s) => ({
+        group_id: group.id,
+        label: s.label,
+        uri: s.uri,
+        image_url: s.imageUrl ?? null,
+      }));
+
+    if (rowsToInsert.length > 0) {
+      const { error: songErr } = await admin
+        .from('guest_group_song')
+        .upsert(rowsToInsert, { onConflict: 'group_id,uri', ignoreDuplicates: true });
+      if (songErr) {
+        return { ok: false, error: 'Error guardando canciones: ' + songErr.message };
+      }
+    }
   }
 
   revalidatePath(`/invite/${data.token}`);

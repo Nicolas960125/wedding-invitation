@@ -1,16 +1,23 @@
 import Image from 'next/image';
 import { ExternalLink, Music, Heart } from 'lucide-react';
 import { getAdminClient } from '@/lib/supabase/admin';
-import type { SongItem } from '@/lib/schemas/rsvp';
 
 export const dynamic = 'force-dynamic';
 
-type GroupRow = {
+type MessageRow = {
   id: string;
-  display_name: string;
-  message: string | null;
-  songs: SongItem[] | null;
-  responded_at: string | null;
+  content: string;
+  created_at: string;
+  guest_group: { display_name: string } | null;
+};
+
+type SongRow = {
+  id: string;
+  label: string;
+  uri: string | null;
+  image_url: string | null;
+  created_at: string;
+  guest_group: { display_name: string } | null;
 };
 
 function trackIdFromUri(uri: string | null | undefined): string | null {
@@ -19,28 +26,38 @@ function trackIdFromUri(uri: string | null | undefined): string | null {
   return match ? match[1] : null;
 }
 
+function formatDate(iso: string, locale = 'es-CO'): string {
+  return new Date(iso).toLocaleDateString(locale, {
+    day: '2-digit',
+    month: 'short',
+    hour: '2-digit',
+    minute: '2-digit',
+  });
+}
+
 export default async function AdminResponsesPage() {
   const admin = getAdminClient();
 
-  const { data } = await admin
-    .from('guest_group')
-    .select('id, display_name, message, songs, responded_at')
-    .not('responded_at', 'is', null)
-    .order('responded_at', { ascending: false });
+  const [{ data: songsData }, { data: messagesData }] = await Promise.all([
+    admin
+      .from('guest_group_song')
+      .select('id, label, uri, image_url, created_at, guest_group(display_name)')
+      .order('created_at', { ascending: false }),
+    admin
+      .from('guest_group_message')
+      .select('id, content, created_at, guest_group(display_name)')
+      .order('created_at', { ascending: false }),
+  ]);
 
-  const groups = (data ?? []) as GroupRow[];
-
-  const messages = groups.filter((g) => g.message && g.message.trim().length > 0);
-  const songEntries = groups.flatMap((g) =>
-    (g.songs ?? []).map((s) => ({ song: s, group: g.display_name })),
-  );
+  const songs = (songsData ?? []) as unknown as SongRow[];
+  const messages = (messagesData ?? []) as unknown as MessageRow[];
 
   return (
     <div className="space-y-10">
       <div>
         <h1 className="font-serif text-3xl">Respuestas</h1>
         <p className="text-muted-foreground mt-1 text-sm">
-          {messages.length} dedicatorias · {songEntries.length} canciones sugeridas.
+          {messages.length} dedicatorias · {songs.length} canciones sugeridas.
         </p>
       </div>
 
@@ -49,18 +66,19 @@ export default async function AdminResponsesPage() {
           <Music className="text-primary size-5" />
           <h2 className="font-serif text-2xl">Canciones</h2>
         </header>
-        {songEntries.length === 0 ? (
+        {songs.length === 0 ? (
           <p className="text-muted-foreground text-sm">Aún no hay canciones sugeridas.</p>
         ) : (
           <ul className="bg-card divide-y rounded-md border">
-            {songEntries.map(({ song, group }, idx) => {
+            {songs.map((song) => {
               const trackId = trackIdFromUri(song.uri);
               const href = trackId ? `https://open.spotify.com/track/${trackId}` : null;
+              const group = song.guest_group?.display_name ?? 'Grupo eliminado';
               const Row = (
                 <div className="flex items-center gap-3 px-3 py-2">
-                  {song.imageUrl ? (
+                  {song.image_url ? (
                     <Image
-                      src={song.imageUrl}
+                      src={song.image_url}
                       alt=""
                       width={48}
                       height={48}
@@ -75,7 +93,7 @@ export default async function AdminResponsesPage() {
                   <div className="min-w-0 flex-1">
                     <p className="truncate text-sm font-medium">{song.label}</p>
                     <p className="text-muted-foreground truncate text-xs">
-                      Sugerida por {group}
+                      Sugerida por {group} · {formatDate(song.created_at)}
                     </p>
                   </div>
                   {href && (
@@ -84,7 +102,7 @@ export default async function AdminResponsesPage() {
                 </div>
               );
               return (
-                <li key={`${song.uri ?? song.label}-${idx}`}>
+                <li key={song.id}>
                   {href ? (
                     <a
                       href={href}
@@ -114,10 +132,12 @@ export default async function AdminResponsesPage() {
           <p className="text-muted-foreground text-sm">Aún no hay dedicatorias.</p>
         ) : (
           <ul className="space-y-3">
-            {messages.map((g) => (
-              <li key={g.id} className="bg-card rounded-md border p-4">
-                <p className="text-sm leading-relaxed whitespace-pre-wrap">{g.message}</p>
-                <p className="text-muted-foreground mt-2 text-xs italic">— {g.display_name}</p>
+            {messages.map((m) => (
+              <li key={m.id} className="bg-card rounded-md border p-4">
+                <p className="text-sm leading-relaxed whitespace-pre-wrap">{m.content}</p>
+                <p className="text-muted-foreground mt-2 text-xs italic">
+                  — {m.guest_group?.display_name ?? 'Grupo eliminado'} · {formatDate(m.created_at)}
+                </p>
               </li>
             ))}
           </ul>
