@@ -36,12 +36,19 @@ import { GUEST_TITLES, type GuestTitle } from '@/lib/schemas/csvRow';
 
 const TITLE_NONE = '__none__';
 
+export type AttendingValue = 'yes' | 'no' | 'pending';
+
 export type GroupEditGuest = {
   id: string;
   full_name: string;
   title: GuestTitle | null;
   is_primary: boolean;
+  attending: boolean | null;
 };
+
+function attendingToValue(v: boolean | null): AttendingValue {
+  return v === true ? 'yes' : v === false ? 'no' : 'pending';
+}
 
 export type GroupEditData = {
   id: string;
@@ -96,13 +103,17 @@ export function GroupEditDialog({ group }: Props) {
       'Grupo guardado',
     );
 
-  const saveGuest = (g: GroupEditGuest, patch: Partial<Pick<GroupEditGuest, 'full_name' | 'title'>>) =>
+  const saveGuest = (
+    g: GroupEditGuest,
+    patch: Partial<{ full_name: string; title: GuestTitle | null; attending: AttendingValue }>,
+  ) =>
     run(() =>
       updateGuestAction({
         guest_id: g.id,
         group_id: group.id,
         full_name: patch.full_name ?? g.full_name,
         title: patch.title === undefined ? g.title : patch.title,
+        attending: patch.attending,
       }),
     );
 
@@ -339,7 +350,7 @@ type GuestRowProps = {
   pending: boolean;
   splitChecked: boolean;
   onToggleSplit: () => void;
-  onSave: (patch: Partial<Pick<GroupEditGuest, 'full_name' | 'title'>>) => void;
+  onSave: (patch: Partial<{ full_name: string; title: GuestTitle | null; attending: AttendingValue }>) => void;
   onRemove: () => void;
   canRemove: boolean;
 };
@@ -347,6 +358,7 @@ type GuestRowProps = {
 function GuestRow({ guest, pending, splitChecked, onToggleSplit, onSave, onRemove, canRemove }: GuestRowProps) {
   const [name, setName] = useState(guest.full_name);
   const titleValue = guest.title ?? TITLE_NONE;
+  const attendingValue = attendingToValue(guest.attending);
 
   useEffect(() => {
     setName(guest.full_name);
@@ -390,6 +402,23 @@ function GuestRow({ guest, pending, splitChecked, onToggleSplit, onSave, onRemov
           onBlur={() => name.trim() && name.trim() !== guest.full_name && onSave({ full_name: name.trim() })}
           disabled={pending}
         />
+      </div>
+      <div className="w-28">
+        <Label className="text-xs">Asiste</Label>
+        <Select
+          value={attendingValue}
+          onValueChange={(v) => onSave({ attending: v as AttendingValue })}
+          disabled={pending}
+        >
+          <SelectTrigger className="w-full">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="yes">Sí</SelectItem>
+            <SelectItem value="no">No</SelectItem>
+            <SelectItem value="pending">Pendiente</SelectItem>
+          </SelectContent>
+        </Select>
       </div>
       <Button
         type="button"

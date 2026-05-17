@@ -31,11 +31,17 @@ const updateGroupSchema = z.object({
     .transform((v) => (v && v.trim() ? v.trim() : null)),
 });
 
+const attendingSchema = z
+  .union([z.enum(['yes', 'no', 'pending']), z.null()])
+  .optional()
+  .transform((v) => (v ?? undefined));
+
 const updateGuestSchema = z.object({
   guest_id: uuid,
   group_id: uuid,
   full_name: z.string().min(1, 'Nombre requerido').max(120),
   title: titleSchema,
+  attending: attendingSchema,
 });
 
 const addGuestSchema = z.object({
@@ -114,16 +120,48 @@ export async function updateGuestAction(input: unknown): Promise<GroupActionStat
   if (!parsed.success) return { ok: false, error: 'Datos invalidos: ' + flattenZod(parsed.error) };
 
   const admin = getAdminClient();
+
+  type GuestUpdate = {
+    full_name: string;
+    title: string | null;
+    attending?: boolean | null;
+    source?: 'admin';
+  };
+
+  const update: GuestUpdate = {
+    full_name: parsed.data.full_name.trim(),
+    title: parsed.data.title,
+  };
+
+  if (parsed.data.attending !== undefined) {
+    update.attending =
+      parsed.data.attending === 'yes' ? true : parsed.data.attending === 'no' ? false : null;
+    update.source = 'admin';
+  }
+
   const { error } = await admin
     .from('guest')
-    .update({
-      full_name: parsed.data.full_name.trim(),
-      title: parsed.data.title,
-    })
+    .update(update)
     .eq('id', parsed.data.guest_id)
     .eq('group_id', parsed.data.group_id);
 
   if (error) return { ok: false, error: 'Error guardando invitado: ' + error.message };
+
+  // Si el admin esta marcando asistencia y el grupo aun no tiene responded_at,
+  // se marca como respondido ahora (para no quedar en "Pendiente" en la tabla).
+  if (parsed.data.attending !== undefined) {
+    const { data: g } = await admin
+      .from('guest_group')
+      .select('responded_at')
+      .eq('id', parsed.data.group_id)
+      .maybeSingle();
+    if (g && g.responded_at === null) {
+      await admin
+        .from('guest_group')
+        .update({ responded_at: new Date().toISOString() })
+        .eq('id', parsed.data.group_id);
+    }
+  }
 
   revalidateGroups();
   return { ok: true, message: 'Invitado actualizado' };

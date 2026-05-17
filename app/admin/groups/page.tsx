@@ -82,6 +82,7 @@ export default async function AdminGroupsPage() {
                   full_name: x.full_name,
                   title: x.title,
                   is_primary: x.is_primary,
+                  attending: x.attending,
                 }));
               return (
                 <TableRow key={g.id}>
