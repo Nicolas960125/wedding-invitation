@@ -125,6 +125,11 @@ export async function submitRsvpAction(
   // Canciones: INSERT append-only con dedupe explicito por (group_id, uri o label).
   // No usamos upsert/ON CONFLICT porque el unique index sobre uri es parcial
   // (WHERE uri is not null) y PostgREST no acepta ON CONFLICT contra indexes parciales.
+  // Hay una ventana de race entre el SELECT y el INSERT bajo concurrencia, pero
+  // (a) el dedupe por uri esta cubierto por el unique index a nivel DB, y
+  // (b) un grupo casi siempre es un solo device humano, asi que el riesgo de
+  // duplicar texto libre es practicamente nulo. Si en el futuro se vuelve
+  // multi-device en serio, anadir pg_advisory_xact_lock(hashtext(group.id)).
   const incomingSongs = data.songs ?? [];
   if (incomingSongs.length > 0) {
     const { data: existing } = await admin

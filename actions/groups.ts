@@ -156,10 +156,16 @@ export async function updateGuestAction(input: unknown): Promise<GroupActionStat
       .eq('id', parsed.data.group_id)
       .maybeSingle();
     if (g && g.responded_at === null) {
-      await admin
+      const { error: respondedErr } = await admin
         .from('guest_group')
         .update({ responded_at: new Date().toISOString() })
         .eq('id', parsed.data.group_id);
+      if (respondedErr) {
+        return {
+          ok: false,
+          error: 'Asistencia guardada, pero fallo marcar el grupo como respondido: ' + respondedErr.message,
+        };
+      }
     }
   }
 
