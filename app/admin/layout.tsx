@@ -1,8 +1,12 @@
-import Link from 'next/link';
-import { signOutAction } from '@/actions/auth';
-import { Button } from '@/components/ui/button';
+import Link from "next/link";
+import { signOutAction } from "@/actions/auth";
+import { Button } from "@/components/ui/button";
 
-export default function AdminLayout({ children }: { children: React.ReactNode }) {
+export default function AdminLayout({
+  children,
+}: {
+  children: React.ReactNode;
+}) {
   return (
     <div className="min-h-screen">
       <header className="bg-card sticky top-0 z-10 border-b">
@@ -19,6 +23,12 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
             </Link>
             <Link href="/admin/respuestas" className="hover:underline">
               Respuestas
+            </Link>
+            <Link href="/admin/checklist" className="hover:underline">
+              Checklist
+            </Link>
+            <Link href="/admin/mesas" className="hover:underline">
+              Mesas
             </Link>
             <Link href="/admin/import" className="hover:underline">
               Importar
