@@ -4,8 +4,8 @@ import { useState, useEffect, useRef, useMemo, useCallback } from "react";
 
 /* ---------------------------------------------------------------
    Plano de puestos — dos mesas imperiales
-   Mesa A: 4 módulos · 16 puestos por lado + 2 cabeceras = 34
-   Mesa B: 5 módulos · 20 puestos por lado + 2 cabeceras = 42
+   Mesa A (Amigos): 5 módulos · 20 puestos por lado + 2 cabeceras = 42
+   Mesa B (Familia): 4 módulos · 16 puestos por lado + 2 cabeceras = 34
    Total: 76 sillas
    Asignaciones persistidas en localStorage; invitados confirmados
    y sus preferencias alimentarias vienen de la base.
@@ -106,6 +106,7 @@ export function SeatingPlanClient({ guests }: { guests: ConfirmedGuest[] }) {
   const saveTimer = useRef<ReturnType<typeof setTimeout> | undefined>(
     undefined,
   );
+  const pendingSave = useRef<string | null>(null);
 
   /* cargar */
   useEffect(() => {
@@ -132,10 +133,11 @@ export function SeatingPlanClient({ guests }: { guests: ConfirmedGuest[] }) {
           );
           setStars(valid);
         }
-        if (d.title) setTitle(d.title);
-        if (d.subtitle) setSubtitle(d.subtitle);
+        if (typeof d.title === "string") setTitle(d.title);
+        if (typeof d.subtitle === "string") setSubtitle(d.subtitle);
         if (typeof d.stacked === "boolean") setStacked(d.stacked);
-        if (d.numbering) setNumbering(d.numbering);
+        if (d.numbering === "global" || d.numbering === "table")
+          setNumbering(d.numbering);
       }
     } catch {
       /* sin datos previos */
@@ -156,21 +158,21 @@ export function SeatingPlanClient({ guests }: { guests: ConfirmedGuest[] }) {
   /* guardar */
   useEffect(() => {
     if (!ready) return;
+    const payload = JSON.stringify({
+      names,
+      stars,
+      title,
+      subtitle,
+      stacked,
+      numbering,
+      seeded: true,
+    });
+    pendingSave.current = payload;
     clearTimeout(saveTimer.current);
     saveTimer.current = setTimeout(() => {
       try {
-        window.localStorage.setItem(
-          STORE_KEY,
-          JSON.stringify({
-            names,
-            stars,
-            title,
-            subtitle,
-            stacked,
-            numbering,
-            seeded: true,
-          }),
-        );
+        window.localStorage.setItem(STORE_KEY, payload);
+        pendingSave.current = null;
       } catch {
         setNote(
           "No se pudo guardar automáticamente. Copia la lista antes de cerrar.",
@@ -179,6 +181,19 @@ export function SeatingPlanClient({ guests }: { guests: ConfirmedGuest[] }) {
     }, 400);
     return () => clearTimeout(saveTimer.current);
   }, [names, stars, title, subtitle, stacked, numbering, ready]);
+
+  /* si desmonta con un guardado pendiente, escribirlo de inmediato */
+  useEffect(
+    () => () => {
+      if (!pendingSave.current) return;
+      try {
+        window.localStorage.setItem(STORE_KEY, pendingSave.current);
+      } catch {
+        /* almacenamiento no disponible */
+      }
+    },
+    [],
+  );
 
   /* ajustar al ancho */
   const fit = useCallback(() => {
@@ -413,8 +428,9 @@ export function SeatingPlanClient({ guests }: { guests: ConfirmedGuest[] }) {
     }
 
     return (
-      <div
-        style={base}
+      <button
+        type="button"
+        style={{ ...base, font: "inherit", textAlign: "center" }}
         onClick={() => openSeat(seat.id)}
         title={
           hasDiet
@@ -478,7 +494,7 @@ export function SeatingPlanClient({ guests }: { guests: ConfirmedGuest[] }) {
             libre
           </span>
         )}
-      </div>
+      </button>
     );
   };
 
@@ -529,7 +545,7 @@ export function SeatingPlanClient({ guests }: { guests: ConfirmedGuest[] }) {
         <div
           style={{ display: "flex", justifyContent: "center", marginBottom: 6 }}
         >
-          <Seat seat={seatOf("head")} />
+          {Seat({ seat: seatOf("head") })}
         </div>
 
         {/* tapa superior */}
@@ -557,7 +573,7 @@ export function SeatingPlanClient({ guests }: { guests: ConfirmedGuest[] }) {
               marginBottom: 4,
             }}
           >
-            <Seat seat={seatOf(`L${i}`)} align="right" />
+            {Seat({ seat: seatOf(`L${i}`), align: "right" })}
             <div style={bodyCell(i)}>
               <div
                 style={{
@@ -567,7 +583,7 @@ export function SeatingPlanClient({ guests }: { guests: ConfirmedGuest[] }) {
                 }}
               />
             </div>
-            <Seat seat={seatOf(`R${i}`)} align="left" />
+            {Seat({ seat: seatOf(`R${i}`), align: "left" })}
           </div>
         ))}
 
@@ -589,7 +605,7 @@ export function SeatingPlanClient({ guests }: { guests: ConfirmedGuest[] }) {
         <div
           style={{ display: "flex", justifyContent: "center", marginTop: 6 }}
         >
-          <Seat seat={seatOf("foot")} />
+          {Seat({ seat: seatOf("foot") })}
         </div>
       </div>
     );
@@ -689,7 +705,7 @@ export function SeatingPlanClient({ guests }: { guests: ConfirmedGuest[] }) {
                 setNumbering((n) => (n === "global" ? "table" : "global"))
               }
             >
-              N.º {numbering === "global" ? "1–76" : "A1 / B1"}
+              N.º {numbering === "global" ? `1–${TOTAL_SEATS}` : "A1 / B1"}
             </button>
             <button
               style={btn(panel === "guests")}
@@ -925,7 +941,7 @@ export function SeatingPlanClient({ guests }: { guests: ConfirmedGuest[] }) {
           }}
         >
           {TABLES.map((t) => (
-            <ImperialTable key={t.key} t={t} />
+            <div key={t.key}>{ImperialTable({ t })}</div>
           ))}
         </div>
       </div>

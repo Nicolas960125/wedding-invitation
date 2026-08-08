@@ -1,26 +1,26 @@
-'use client';
+"use client";
 
-import { useState, useTransition } from 'react';
-import { Pencil, Trash2, CalendarDays } from 'lucide-react';
-import { toast } from 'sonner';
+import { useState, useTransition } from "react";
+import { Pencil, Trash2, CalendarDays } from "lucide-react";
+import { toast } from "sonner";
 import {
   createTaskAction,
   updateTaskAction,
   toggleTaskAction,
   deleteTaskAction,
-} from '@/actions/checklist';
-import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Checkbox } from '@/components/ui/checkbox';
+} from "@/actions/checklist";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Checkbox } from "@/components/ui/checkbox";
 import {
   Dialog,
   DialogContent,
   DialogFooter,
   DialogHeader,
   DialogTitle,
-} from '@/components/ui/dialog';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
+} from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 
 export type ChecklistTask = {
   id: string;
@@ -33,16 +33,16 @@ export type ChecklistTask = {
 
 function todayLocalIso(): string {
   const now = new Date();
-  const month = String(now.getMonth() + 1).padStart(2, '0');
-  const day = String(now.getDate()).padStart(2, '0');
+  const month = String(now.getMonth() + 1).padStart(2, "0");
+  const day = String(now.getDate()).padStart(2, "0");
   return `${now.getFullYear()}-${month}-${day}`;
 }
 
 function formatDueDate(iso: string): string {
-  const [year, month, day] = iso.split('-').map(Number);
-  return new Date(year, month - 1, day).toLocaleDateString('es-CO', {
-    day: 'numeric',
-    month: 'short',
+  const [year, month, day] = iso.split("-").map(Number);
+  return new Date(year, month - 1, day).toLocaleDateString("es-CO", {
+    day: "numeric",
+    month: "short",
   });
 }
 
@@ -53,17 +53,19 @@ export function ChecklistClient({ tasks }: { tasks: ChecklistTask[] }) {
   const total = tasks.length;
   const done = tasks.filter((t) => t.completed_at).length;
   const categories = [...new Set(tasks.map((t) => t.category))].sort((a, b) =>
-    a.localeCompare(b, 'es'),
+    a.localeCompare(b, "es"),
   );
   const today = todayLocalIso();
 
-  const run = (action: () => Promise<{ ok: boolean; message?: string; error?: string }>) => {
+  const run = (
+    action: () => Promise<{ ok: boolean; message?: string; error?: string }>,
+  ) => {
     startTransition(async () => {
       const res = await action();
       if (res.ok) {
         if (res.message) toast.success(res.message);
       } else {
-        toast.error(res.error ?? 'Error');
+        toast.error(res.error ?? "Error");
       }
     });
   };
@@ -98,7 +100,9 @@ export function ChecklistClient({ tasks }: { tasks: ChecklistTask[] }) {
       ) : (
         categories.map((category) => {
           const categoryTasks = tasks.filter((t) => t.category === category);
-          const categoryDone = categoryTasks.filter((t) => t.completed_at).length;
+          const categoryDone = categoryTasks.filter(
+            (t) => t.completed_at,
+          ).length;
           return (
             <Card key={category}>
               <CardHeader className="pb-2">
@@ -112,26 +116,37 @@ export function ChecklistClient({ tasks }: { tasks: ChecklistTask[] }) {
               <CardContent className="space-y-1">
                 {categoryTasks.map((task) => {
                   const completed = Boolean(task.completed_at);
-                  const overdue = !completed && task.due_date !== null && task.due_date < today;
+                  const overdue =
+                    !completed &&
+                    task.due_date !== null &&
+                    task.due_date < today;
                   return (
                     <div
                       key={task.id}
                       className="hover:bg-muted/50 flex items-center gap-3 rounded-md px-2 py-1.5"
                     >
                       <Checkbox
+                        aria-label={
+                          completed
+                            ? `Marcar "${task.title}" como pendiente`
+                            : `Completar "${task.title}"`
+                        }
                         checked={completed}
                         disabled={pending}
                         onCheckedChange={(checked) =>
                           run(() =>
-                            toggleTaskAction({ task_id: task.id, completed: checked === true }),
+                            toggleTaskAction({
+                              task_id: task.id,
+                              completed: checked === true,
+                            }),
                           )
                         }
                       />
                       <span
                         className={
                           completed
-                            ? 'text-muted-foreground flex-1 text-sm line-through'
-                            : 'flex-1 text-sm'
+                            ? "text-muted-foreground flex-1 text-sm line-through"
+                            : "flex-1 text-sm"
                         }
                       >
                         {task.title}
@@ -139,7 +154,9 @@ export function ChecklistClient({ tasks }: { tasks: ChecklistTask[] }) {
                       {task.due_date && (
                         <span
                           className={`flex items-center gap-1 text-xs ${
-                            overdue ? 'text-destructive font-medium' : 'text-muted-foreground'
+                            overdue
+                              ? "text-destructive font-medium"
+                              : "text-muted-foreground"
                           }`}
                         >
                           <CalendarDays className="size-3.5" />
@@ -147,6 +164,7 @@ export function ChecklistClient({ tasks }: { tasks: ChecklistTask[] }) {
                         </span>
                       )}
                       <Button
+                        aria-label={`Editar "${task.title}"`}
                         variant="ghost"
                         size="icon"
                         className="size-7"
@@ -156,6 +174,7 @@ export function ChecklistClient({ tasks }: { tasks: ChecklistTask[] }) {
                         <Pencil className="size-3.5" />
                       </Button>
                       <Button
+                        aria-label={`Eliminar "${task.title}"`}
                         variant="ghost"
                         size="icon"
                         className="text-destructive size-7"
@@ -194,20 +213,22 @@ function AddTaskForm({
 }: {
   categories: string[];
   pending: boolean;
-  onSubmit: (action: () => Promise<{ ok: boolean; message?: string; error?: string }>) => void;
+  onSubmit: (
+    action: () => Promise<{ ok: boolean; message?: string; error?: string }>,
+  ) => void;
 }) {
-  const [title, setTitle] = useState('');
-  const [category, setCategory] = useState('');
-  const [dueDate, setDueDate] = useState('');
+  const [title, setTitle] = useState("");
+  const [category, setCategory] = useState("");
+  const [dueDate, setDueDate] = useState("");
 
   const submit = () => {
     if (!title.trim()) {
-      toast.error('Ingresa un titulo');
+      toast.error("Ingresa un titulo");
       return;
     }
     onSubmit(() => createTaskAction({ title, category, due_date: dueDate }));
-    setTitle('');
-    setDueDate('');
+    setTitle("");
+    setDueDate("");
   };
 
   return (
@@ -275,11 +296,13 @@ function EditTaskDialog({
   task: ChecklistTask | null;
   pending: boolean;
   onClose: () => void;
-  onSubmit: (action: () => Promise<{ ok: boolean; message?: string; error?: string }>) => void;
+  onSubmit: (
+    action: () => Promise<{ ok: boolean; message?: string; error?: string }>,
+  ) => void;
 }) {
-  const [title, setTitle] = useState('');
-  const [category, setCategory] = useState('');
-  const [dueDate, setDueDate] = useState('');
+  const [title, setTitle] = useState("");
+  const [category, setCategory] = useState("");
+  const [dueDate, setDueDate] = useState("");
   const [lastTaskId, setLastTaskId] = useState<string | null>(null);
 
   // Sincronizar inputs cuando se abre con otra tarea
@@ -287,16 +310,23 @@ function EditTaskDialog({
     setLastTaskId(task.id);
     setTitle(task.title);
     setCategory(task.category);
-    setDueDate(task.due_date ?? '');
+    setDueDate(task.due_date ?? "");
   }
 
   const submit = () => {
     if (!task) return;
     if (!title.trim()) {
-      toast.error('Ingresa un titulo');
+      toast.error("Ingresa un titulo");
       return;
     }
-    onSubmit(() => updateTaskAction({ task_id: task.id, title, category, due_date: dueDate }));
+    onSubmit(() =>
+      updateTaskAction({
+        task_id: task.id,
+        title,
+        category,
+        due_date: dueDate,
+      }),
+    );
     onClose();
   };
 
