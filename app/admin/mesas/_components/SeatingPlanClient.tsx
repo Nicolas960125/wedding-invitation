@@ -22,14 +22,21 @@ import {
   SEAT_INDEX,
   TABLES,
   TOTAL_SEATS,
+  FIXED_SEATS,
+  isFixedSeat,
+  moduleDividers,
   type SeatDef,
 } from "@/lib/seating";
 
+/* Sillas que el plano puede asignar: las de los novios estan reservadas. */
+const OPEN_SEATS = SEATS.filter((s) => !isFixedSeat(s.id));
+const FIXED_COUNT = SEATS.length - OPEN_SEATS.length;
+
 /* ---------------------------------------------------------------
    Plano de puestos — dos mesas imperiales
-   Mesa A (Amigos): 5 módulos · 20 puestos por lado + 2 cabeceras = 42
-   Mesa B (Familia): 4 módulos · 16 puestos por lado + 2 cabeceras = 34
-   Total: 76 sillas
+   Mesa A (Amigos): 5 módulos · 20 puestos por lado = 40
+   Mesa B (Familia): 4 módulos · 15 puestos por lado = 30
+   Total: 70 sillas, de las cuales 2 quedan reservadas para los novios
    Las asignaciones se persisten en la tabla seat_assignment; en
    localStorage solo quedan las preferencias de vista.
 ---------------------------------------------------------------- */
@@ -260,7 +267,7 @@ export function SeatingPlanClient({
     return (Object.keys(DIET_META) as DietKind[]).filter((k) => kinds.has(k));
   }, [guests]);
 
-  const filled = Object.keys(seating).length;
+  const filled = Object.keys(seating).length + FIXED_COUNT;
 
   const matches = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -319,6 +326,7 @@ export function SeatingPlanClient({
   };
 
   const openSeat = (id: string) => {
+    if (isFixedSeat(id)) return;
     if (starMode) {
       setStars((s) => ({ ...s, [id]: !s[id] }));
       return;
@@ -347,7 +355,7 @@ export function SeatingPlanClient({
   };
 
   const assignGuest = (g: ConfirmedGuest) => {
-    const free = SEATS.find((s) => !seating[s.id]);
+    const free = OPEN_SEATS.find((s) => !seating[s.id]);
     if (!free) {
       setNote("No quedan sillas libres.");
       return;
@@ -364,7 +372,7 @@ export function SeatingPlanClient({
     const assignments: { seat_id: string; guest_id: string }[] = [];
     const next = { ...seating };
     let i = 0;
-    for (const s of SEATS) {
+    for (const s of OPEN_SEATS) {
       if (i >= unseated.length) break;
       if (next[s.id]) continue;
       const g = unseated[i++];
@@ -443,6 +451,7 @@ export function SeatingPlanClient({
   const copyList = async () => {
     const txt = SEATS.map((s) => {
       const lbl = numbering === "global" ? s.num : s.code;
+      if (FIXED_SEATS[s.id]) return `${lbl}. ${FIXED_SEATS[s.id]}`;
       const g = seating[s.id] ? guestById.get(seating[s.id]) : undefined;
       if (!g) return `${lbl}. —`;
       const diet = g.dietary_restrictions?.trim();
@@ -483,9 +492,10 @@ export function SeatingPlanClient({
     seat: SeatDef;
     align?: "left" | "right";
   }) => {
-    const guestId = seating[seat.id] ?? "";
+    const fixed = FIXED_SEATS[seat.id];
+    const guestId = fixed ? "" : (seating[seat.id] ?? "");
     const guest = guestId ? guestById.get(guestId) : undefined;
-    const name = guest?.full_name ?? "";
+    const name = fixed ?? guest?.full_name ?? "";
     const isEditing = editing === seat.id;
     const isStar = !!stars[seat.id];
     const isMatch = matches ? !!matches[seat.id] : false;
@@ -499,8 +509,8 @@ export function SeatingPlanClient({
       minHeight: SEAT_H,
       boxSizing: "border-box",
       borderRadius: 7,
-      background: isStar ? "#F6EDD8" : C.ivory,
-      border: `1px ${guestId ? "solid" : "dashed"} ${isStar ? C.brass : guestId ? C.line : "#D6DDD5"}`,
+      background: fixed || isStar ? "#F6EDD8" : C.ivory,
+      border: `1px ${fixed || guestId ? "solid" : "dashed"} ${fixed || isStar ? C.brass : guestId ? C.line : "#D6DDD5"}`,
       display: "flex",
       alignItems: "center",
       justifyContent: "center",
@@ -512,7 +522,7 @@ export function SeatingPlanClient({
       transition: "opacity .15s ease, box-shadow .15s ease",
     };
 
-    if (isEditing) {
+    if (isEditing && !fixed) {
       // Solo confirmados sin silla (mas el ocupante actual de este puesto).
       const options = guests.filter(
         (g) => !seatedIds.has(g.id) || g.id === guestId,
@@ -567,9 +577,11 @@ export function SeatingPlanClient({
         style={{ ...base, font: "inherit", textAlign: "center" }}
         onClick={() => openSeat(seat.id)}
         title={
-          meta
-            ? `Puesto ${label(seat)} · ${meta.label}: ${diet!.trim()}`
-            : `Puesto ${label(seat)}`
+          fixed
+            ? `Puesto ${label(seat)} · reservado para ${fixed.toLowerCase()}`
+            : meta
+              ? `Puesto ${label(seat)} · ${meta.label}: ${diet!.trim()}`
+              : `Puesto ${label(seat)}`
         }
       >
         <span
@@ -635,15 +647,14 @@ export function SeatingPlanClient({
   /* ---------------- table ---------------- */
   const ImperialTable = ({ t }: { t: (typeof TABLES)[number] }) => {
     const seatOf = (pos: string) => SEAT_INDEX[`${t.key}-${pos}`];
-    const rowsPerModule = t.perSide / t.modules;
+    const dividers = moduleDividers(t.perSide, t.modules);
     const bodyCell = (i: number): React.CSSProperties => ({
       width: BODY_W,
       height: SEAT_H + 6,
       background: C.wood,
-      borderBottom:
-        (i + 1) % rowsPerModule === 0 && i !== t.perSide - 1
-          ? "1px solid rgba(233,222,196,.45)"
-          : "none",
+      borderBottom: dividers.has(i)
+        ? "1px solid rgba(233,222,196,.45)"
+        : "none",
       display: "flex",
       justifyContent: "center",
     });
@@ -673,13 +684,6 @@ export function SeatingPlanClient({
           >
             {t.modules} mesas unidas · {t.total} puestos
           </div>
-        </div>
-
-        {/* cabecera */}
-        <div
-          style={{ display: "flex", justifyContent: "center", marginBottom: 6 }}
-        >
-          {Seat({ seat: seatOf("head") })}
         </div>
 
         {/* tapa superior */}
@@ -733,13 +737,6 @@ export function SeatingPlanClient({
               borderRadius: "0 0 10px 10px",
             }}
           />
-        </div>
-
-        {/* pie */}
-        <div
-          style={{ display: "flex", justifyContent: "center", marginTop: 6 }}
-        >
-          {Seat({ seat: seatOf("foot") })}
         </div>
       </div>
     );
