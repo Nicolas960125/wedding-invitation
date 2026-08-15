@@ -9,6 +9,7 @@ import {
   useTransition,
 } from "react";
 import { useRouter } from "next/navigation";
+import { Leaf, Drumstick, Fish, TriangleAlert, Utensils } from "lucide-react";
 import {
   assignSeatAction,
   clearSeatAction,
@@ -66,6 +67,37 @@ const LEGACY_KEY = "boda:plano-imperial:legacy-names";
 
 const norm = (s: string) => s.trim().toLowerCase().replace(/\s+/g, " ");
 
+/* Las preferencias se escriben a mano en el RSVP, asi que se clasifican por
+   palabras clave para poder marcarlas con un icono en el plano. Quien no
+   tiene preferencia real ("Ninguna") no lleva marca. */
+type DietKind = "veg" | "pollo" | "pescado" | "alergia" | "otro";
+
+const DIET_META: Record<
+  DietKind,
+  { Icon: typeof Leaf; color: string; label: string }
+> = {
+  veg: { Icon: Leaf, color: "#4E7A4A", label: "Vegetariano" },
+  pollo: { Icon: Drumstick, color: "#9A6B24", label: "Sin carnes rojas" },
+  pescado: { Icon: Fish, color: "#3E6E86", label: "Pescetariano" },
+  alergia: { Icon: TriangleAlert, color: "#B4553F", label: "Alergia" },
+  otro: { Icon: Utensils, color: "#A98A4B", label: "Otra preferencia" },
+};
+
+function dietKind(raw: string | null | undefined): DietKind | null {
+  const d = (raw ?? "").trim().toLowerCase();
+  if (!d) return null;
+  // "No huevo" o "No piña" son restricciones reales: solo se descarta el
+  // texto que en si mismo dice que no hay ninguna.
+  if (/^ningun[oa]/.test(d)) return null;
+  if (/^(nada|no|n\/a|na|-|\.)$/.test(d)) return null;
+  if (/vegan|vegetarian/.test(d)) return "veg";
+  if (/pesquetarian|pescetarian|pescatarian/.test(d)) return "pescado";
+  if (/carnes? roja|carne de res|solo pollo|s[oó]lo pollo|ni cerdo|no cerdo/.test(d))
+    return "pollo";
+  if (/alergi|al[eé]rgic|marisco|frutos secos/.test(d)) return "alergia";
+  return "otro";
+}
+
 export function SeatingPlanClient({
   guests,
   initialSeating,
@@ -98,6 +130,7 @@ export function SeatingPlanClient({
   const stageRef = useRef<HTMLDivElement>(null);
   const planRef = useRef<HTMLDivElement>(null);
   const headerRef = useRef<HTMLDivElement>(null);
+  const legendRef = useRef<HTMLDivElement>(null);
   const saveTimer = useRef<ReturnType<typeof setTimeout> | undefined>(
     undefined,
   );
@@ -211,12 +244,19 @@ export function SeatingPlanClient({
   );
 
   const withDiet = useMemo(
-    () =>
-      guests.filter(
-        (g) => g.dietary_restrictions && g.dietary_restrictions.trim(),
-      ),
+    () => guests.filter((g) => dietKind(g.dietary_restrictions)),
     [guests],
   );
+
+  /* Solo las categorias presentes entre los confirmados, para la leyenda. */
+  const dietLegend = useMemo(() => {
+    const kinds = new Set<DietKind>();
+    guests.forEach((g) => {
+      const k = dietKind(g.dietary_restrictions);
+      if (k) kinds.add(k);
+    });
+    return (Object.keys(DIET_META) as DietKind[]).filter((k) => kinds.has(k));
+  }, [guests]);
 
   const filled = Object.keys(seating).length;
 
@@ -368,10 +408,15 @@ export function SeatingPlanClient({
     const naturalH = rect.height / scale;
     const pageW = ((210 - 16) / 25.4) * 96; // A4 menos los margenes, en px
     const pageH = ((297 - 16) / 25.4) * 96;
-    // El titulo y el subtitulo se imprimen arriba del plano y no los afecta
+    // El encabezado y la leyenda se imprimen fuera del plano y no los afecta
     // el zoom, asi que su alto sale del espacio disponible para el plano.
     const headerH = headerRef.current?.getBoundingClientRect().height ?? 0;
-    const fit = Math.min(pageW / naturalW, (pageH - headerH) / naturalH, 1);
+    const legendH = legendRef.current?.getBoundingClientRect().height ?? 0;
+    const fit = Math.min(
+      pageW / naturalW,
+      (pageH - headerH - legendH) / naturalH,
+      1,
+    );
     setPrinting(scale);
     setScale(Math.max(0.2, Math.floor(fit * 100) / 100));
   };
@@ -444,7 +489,8 @@ export function SeatingPlanClient({
     const isMatch = matches ? !!matches[seat.id] : false;
     const dim = matches && !isMatch;
     const diet = guest?.dietary_restrictions;
-    const hasDiet = !!(diet && diet.trim());
+    const kind = dietKind(diet);
+    const meta = kind ? DIET_META[kind] : null;
 
     const base: React.CSSProperties = {
       width: SEAT_W,
@@ -519,8 +565,8 @@ export function SeatingPlanClient({
         style={{ ...base, font: "inherit", textAlign: "center" }}
         onClick={() => openSeat(seat.id)}
         title={
-          hasDiet
-            ? `Puesto ${label(seat)} · ${diet!.trim()}`
+          meta
+            ? `Puesto ${label(seat)} · ${meta.label}: ${diet!.trim()}`
             : `Puesto ${label(seat)}`
         }
       >
@@ -538,16 +584,16 @@ export function SeatingPlanClient({
         >
           {label(seat)}
         </span>
-        {hasDiet && (
-          <span
+        {meta && (
+          <meta.Icon
+            size={11}
+            strokeWidth={2.2}
+            color={meta.color}
+            aria-hidden
             style={{
               position: "absolute",
               top: 3,
-              [align === "right" ? "left" : "right"]: 6,
-              width: 6,
-              height: 6,
-              borderRadius: 999,
-              background: C.brass,
+              [align === "right" ? "left" : "right"]: 5,
             }}
           />
         )}
@@ -906,6 +952,8 @@ export function SeatingPlanClient({
                 {guests.map((g) => {
                   const seated = seatedIds.has(g.id);
                   const diet = g.dietary_restrictions?.trim();
+                  const kind = dietKind(g.dietary_restrictions);
+                  const meta = kind ? DIET_META[kind] : null;
                   return (
                     <button
                       key={g.id}
@@ -921,7 +969,7 @@ export function SeatingPlanClient({
                         fontSize: 12.5,
                         padding: "7px 10px",
                         borderRadius: 8,
-                        border: `1px solid ${diet ? C.brass : C.line}`,
+                        border: `1px solid ${meta ? meta.color : C.line}`,
                         background: seated ? "transparent" : C.ivory,
                         color: C.ink,
                         opacity: seated ? 0.55 : 1,
@@ -935,12 +983,17 @@ export function SeatingPlanClient({
                       {diet && (
                         <span
                           style={{
-                            display: "block",
+                            display: "flex",
+                            alignItems: "center",
+                            gap: 4,
                             fontSize: 11,
-                            color: C.brass,
+                            color: meta ? meta.color : C.muted,
                             marginTop: 2,
                           }}
                         >
+                          {meta && (
+                            <meta.Icon size={11} strokeWidth={2.2} aria-hidden />
+                          )}
                           {diet}
                         </span>
                       )}
@@ -1061,6 +1114,35 @@ export function SeatingPlanClient({
         </div>
       </div>
 
+      {/* Leyenda: en papel es lo unico que explica los iconos. */}
+      {dietLegend.length > 0 && (
+        <div
+          ref={legendRef}
+          style={{
+            display: "flex",
+            flexWrap: "wrap",
+            justifyContent: "center",
+            gap: "6px 18px",
+            padding: "0 16px 18px",
+            fontSize: 11,
+            color: C.muted,
+          }}
+        >
+          {dietLegend.map((k) => {
+            const { Icon, color, label: text } = DIET_META[k];
+            return (
+              <span
+                key={k}
+                style={{ display: "flex", alignItems: "center", gap: 5 }}
+              >
+                <Icon size={12} strokeWidth={2.2} color={color} aria-hidden />
+                {text}
+              </span>
+            );
+          })}
+        </div>
+      )}
+
       {!clean && (
         <div
           className="print-hidden"
@@ -1072,8 +1154,8 @@ export function SeatingPlanClient({
           }}
         >
           Toca una silla y elige un invitado confirmado de la lista. Cada cambio
-          se guarda en la base. El punto dorado marca preferencia alimentaria
-          (pasa el cursor para verla).
+          se guarda en la base. Los iconos marcan la preferencia alimentaria
+          (pasa el cursor para leer el texto completo).
         </div>
       )}
     </div>
