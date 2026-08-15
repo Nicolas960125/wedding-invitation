@@ -29,9 +29,13 @@ export default async function MesasPage() {
     );
   }
 
+  // Un invitado que pasa a attending = false conserva su fila; sin este
+  // filtro la silla se veria libre pero contaria como ocupada.
+  const guestIds = new Set((guestsRes.data ?? []).map((g) => g.id as string));
   const initialSeating: Record<string, string> = {};
   (seatsRes.data ?? []).forEach((row) => {
-    initialSeating[row.seat_id as string] = row.guest_id as string;
+    const guestId = row.guest_id as string;
+    if (guestIds.has(guestId)) initialSeating[row.seat_id as string] = guestId;
   });
 
   return (

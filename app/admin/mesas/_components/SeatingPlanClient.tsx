@@ -8,6 +8,7 @@ import {
   useCallback,
   useTransition,
 } from "react";
+import { useRouter } from "next/navigation";
 import {
   assignSeatAction,
   clearSeatAction,
@@ -91,6 +92,7 @@ export function SeatingPlanClient({
     null,
   );
   const [pending, startTransition] = useTransition();
+  const router = useRouter();
 
   const stageRef = useRef<HTMLDivElement>(null);
   const saveTimer = useRef<ReturnType<typeof setTimeout> | undefined>(
@@ -252,20 +254,21 @@ export function SeatingPlanClient({
     setLegacyNames(null);
   };
 
-  /* aplica el cambio local y lo persiste; si falla, revierte */
+  /* aplica el cambio local y lo persiste; si falla, vuelve a pedirle el
+     plano al servidor en vez de revertir a un snapshot, que quedaria viejo
+     si otra accion cambio el plano mientras esta estaba en vuelo */
   const run = (
     next: Record<string, string>,
     action: () => Promise<SeatingActionState>,
     message?: string,
   ) => {
-    const prev = seating;
     setSeating(next);
     startTransition(async () => {
       const res = await action();
       if (res.ok) setNote(message ?? res.message ?? "");
       else {
-        setSeating(prev);
         setNote(res.error ?? "No se pudo guardar el cambio.");
+        router.refresh();
       }
     });
   };
@@ -341,8 +344,12 @@ export function SeatingPlanClient({
     if (!legacyPlan.length) return;
     const next = { ...seating };
     legacyPlan.forEach((a) => (next[a.seat_id] = a.guest_id));
-    run(next, () => assignManySeatsAction({ assignments: legacyPlan }));
-    dropLegacy();
+    // Solo se descarta el plano viejo si la importacion llego a la base.
+    run(next, async () => {
+      const res = await assignManySeatsAction({ assignments: legacyPlan });
+      if (res.ok) dropLegacy();
+      return res;
+    });
   };
 
   const copyList = async () => {
