@@ -1,14 +1,36 @@
 "use client";
 
-import { useState, useEffect, useRef, useMemo, useCallback } from "react";
+import {
+  useState,
+  useEffect,
+  useRef,
+  useMemo,
+  useCallback,
+  useTransition,
+} from "react";
+import { useRouter } from "next/navigation";
+import {
+  assignSeatAction,
+  clearSeatAction,
+  assignManySeatsAction,
+  clearAllSeatsAction,
+  type SeatingActionState,
+} from "@/actions/seating";
+import {
+  SEATS,
+  SEAT_INDEX,
+  TABLES,
+  TOTAL_SEATS,
+  type SeatDef,
+} from "@/lib/seating";
 
 /* ---------------------------------------------------------------
    Plano de puestos — dos mesas imperiales
    Mesa A (Amigos): 5 módulos · 20 puestos por lado + 2 cabeceras = 42
    Mesa B (Familia): 4 módulos · 16 puestos por lado + 2 cabeceras = 34
    Total: 76 sillas
-   Asignaciones persistidas en localStorage; invitados confirmados
-   y sus preferencias alimentarias vienen de la base.
+   Las asignaciones se persisten en la tabla seat_assignment; en
+   localStorage solo quedan las preferencias de vista.
 ---------------------------------------------------------------- */
 
 export type ConfirmedGuest = {
@@ -33,64 +55,29 @@ const C = {
 const DISPLAY = "var(--font-serif), Georgia, serif";
 const BODY = "var(--font-sans), 'Segoe UI', system-ui, sans-serif";
 
-const TABLES = [
-  { key: "A", label: "Mesa A · Amigos", modules: 5, perSide: 20, total: 42 },
-  { key: "B", label: "Mesa B · Familia", modules: 4, perSide: 16, total: 34 },
-];
-
 const SEAT_W = 116;
 const SEAT_H = 40;
 const GAP = 10;
 const BODY_W = 92;
 const COL_W = SEAT_W * 2 + GAP * 2 + BODY_W;
 
-type SeatDef = {
-  id: string;
-  table: string;
-  pos: string;
-  num: number;
-  code: string;
-};
-
-function buildSeats(): SeatDef[] {
-  const out: SeatDef[] = [];
-  let n = 1;
-  TABLES.forEach((t) => {
-    let local = 1;
-    const push = (pos: string) => {
-      out.push({
-        id: `${t.key}-${pos}`,
-        table: t.key,
-        pos,
-        num: n++,
-        code: `${t.key}${local++}`,
-      });
-    };
-    push("head");
-    for (let i = 0; i < t.perSide; i++) push(`L${i}`);
-    push("foot");
-    for (let i = 0; i < t.perSide; i++) push(`R${i}`);
-  });
-  return out;
-}
-
-const SEATS = buildSeats();
-const SEAT_INDEX = SEATS.reduce<Record<string, SeatDef & { order: number }>>(
-  (acc, s, i) => ((acc[s.id] = { ...s, order: i }), acc),
-  {},
-);
-const TOTAL_SEATS = SEATS.length; // 76
-const STORE_KEY = "boda:plano-imperial:v1";
+const PREFS_KEY = "boda:plano-imperial:v1";
+const LEGACY_KEY = "boda:plano-imperial:legacy-names";
 
 const norm = (s: string) => s.trim().toLowerCase().replace(/\s+/g, " ");
 
-export function SeatingPlanClient({ guests }: { guests: ConfirmedGuest[] }) {
-  const [names, setNames] = useState<Record<string, string>>({}); // { seatId: "Nombre" }
+export function SeatingPlanClient({
+  guests,
+  initialSeating,
+}: {
+  guests: ConfirmedGuest[];
+  initialSeating: Record<string, string>;
+}) {
+  const [seating, setSeating] = useState(initialSeating); // { seatId: guestId }
   const [stars, setStars] = useState<Record<string, boolean>>({}); // { seatId: true }
   const [title, setTitle] = useState("Nuestro matrimonio");
   const [subtitle, setSubtitle] = useState("Plano de puestos");
   const [editing, setEditing] = useState<string | null>(null);
-  const [draft, setDraft] = useState("");
   const [query, setQuery] = useState("");
   const [scale, setScale] = useState(1);
   const [stacked, setStacked] = useState(false);
@@ -101,6 +88,11 @@ export function SeatingPlanClient({ guests }: { guests: ConfirmedGuest[] }) {
   const [confirmReset, setConfirmReset] = useState(false);
   const [note, setNote] = useState("");
   const [ready, setReady] = useState(false);
+  const [legacyNames, setLegacyNames] = useState<Record<string, string> | null>(
+    null,
+  );
+  const [pending, startTransition] = useTransition();
+  const router = useRouter();
 
   const stageRef = useRef<HTMLDivElement>(null);
   const saveTimer = useRef<ReturnType<typeof setTimeout> | undefined>(
@@ -108,22 +100,17 @@ export function SeatingPlanClient({ guests }: { guests: ConfirmedGuest[] }) {
   );
   const pendingSave = useRef<string | null>(null);
 
-  /* cargar */
+  /* el servidor es la fuente de verdad de las asignaciones */
   useEffect(() => {
-    const loaded: Record<string, string> = {};
-    let seeded = false;
+    if (!pending) setSeating(initialSeating);
+  }, [initialSeating, pending]);
+
+  /* cargar preferencias de vista */
+  useEffect(() => {
     try {
-      const raw = window.localStorage.getItem(STORE_KEY);
+      const raw = window.localStorage.getItem(PREFS_KEY);
       if (raw) {
         const d = JSON.parse(raw);
-        seeded = !!d.seeded;
-        if (d.names) {
-          Object.entries(d.names as Record<string, string>).forEach(
-            ([id, v]) => {
-              if (SEAT_INDEX[id]) loaded[id] = v;
-            },
-          );
-        }
         if (d.stars) {
           const valid: Record<string, boolean> = {};
           Object.entries(d.stars as Record<string, boolean>).forEach(
@@ -138,56 +125,48 @@ export function SeatingPlanClient({ guests }: { guests: ConfirmedGuest[] }) {
         if (typeof d.stacked === "boolean") setStacked(d.stacked);
         if (d.numbering === "global" || d.numbering === "table")
           setNumbering(d.numbering);
+        // Planos armados antes de persistir en base: se guardan aparte para
+        // ofrecer importarlos una sola vez.
+        if (d.names && Object.keys(d.names).length > 0)
+          window.localStorage.setItem(LEGACY_KEY, JSON.stringify(d.names));
       }
+      const legacy = window.localStorage.getItem(LEGACY_KEY);
+      if (legacy) setLegacyNames(JSON.parse(legacy));
     } catch {
       /* sin datos previos */
     }
-    // Primera vez sin plano armado: sentar automaticamente a los confirmados
-    if (!seeded && Object.keys(loaded).length === 0) {
-      let i = 0;
-      for (const s of SEATS) {
-        if (i >= guests.length) break;
-        loaded[s.id] = guests[i++].full_name;
-      }
-    }
-    setNames(loaded);
     setReady(true);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  /* guardar */
+  /* guardar preferencias de vista */
   useEffect(() => {
     if (!ready) return;
     const payload = JSON.stringify({
-      names,
       stars,
       title,
       subtitle,
       stacked,
       numbering,
-      seeded: true,
     });
     pendingSave.current = payload;
     clearTimeout(saveTimer.current);
     saveTimer.current = setTimeout(() => {
       try {
-        window.localStorage.setItem(STORE_KEY, payload);
+        window.localStorage.setItem(PREFS_KEY, payload);
         pendingSave.current = null;
       } catch {
-        setNote(
-          "No se pudo guardar automáticamente. Copia la lista antes de cerrar.",
-        );
+        setNote("No se pudieron guardar las preferencias de vista.");
       }
     }, 400);
     return () => clearTimeout(saveTimer.current);
-  }, [names, stars, title, subtitle, stacked, numbering, ready]);
+  }, [stars, title, subtitle, stacked, numbering, ready]);
 
   /* si desmonta con un guardado pendiente, escribirlo de inmediato */
   useEffect(
     () => () => {
       if (!pendingSave.current) return;
       try {
-        window.localStorage.setItem(STORE_KEY, pendingSave.current);
+        window.localStorage.setItem(PREFS_KEY, pendingSave.current);
       } catch {
         /* almacenamiento no disponible */
       }
@@ -215,23 +194,17 @@ export function SeatingPlanClient({ guests }: { guests: ConfirmedGuest[] }) {
     return () => window.removeEventListener("resize", onR);
   }, [fit]);
 
-  const guestByName = useMemo(() => {
+  const guestById = useMemo(() => {
     const map = new Map<string, ConfirmedGuest>();
-    guests.forEach((g) => map.set(norm(g.full_name), g));
+    guests.forEach((g) => map.set(g.id, g));
     return map;
   }, [guests]);
 
-  const seatedSet = useMemo(() => {
-    const set = new Set<string>();
-    Object.values(names).forEach((v) => {
-      if (v && v.trim()) set.add(norm(v));
-    });
-    return set;
-  }, [names]);
+  const seatedIds = useMemo(() => new Set(Object.values(seating)), [seating]);
 
   const unseated = useMemo(
-    () => guests.filter((g) => !seatedSet.has(norm(g.full_name))),
-    [guests, seatedSet],
+    () => guests.filter((g) => !seatedIds.has(g.id)),
+    [guests, seatedIds],
   );
 
   const withDiet = useMemo(
@@ -242,19 +215,63 @@ export function SeatingPlanClient({ guests }: { guests: ConfirmedGuest[] }) {
     [guests],
   );
 
-  const filled = useMemo(
-    () => Object.values(names).filter((v) => v && v.trim()).length,
-    [names],
-  );
+  const filled = Object.keys(seating).length;
+
   const matches = useMemo(() => {
     const q = query.trim().toLowerCase();
     if (!q) return null;
     const set: Record<string, boolean> = {};
-    Object.entries(names).forEach(([id, v]) => {
-      if (v && v.toLowerCase().includes(q)) set[id] = true;
+    Object.entries(seating).forEach(([seatId, guestId]) => {
+      const name = guestById.get(guestId)?.full_name;
+      if (name && name.toLowerCase().includes(q)) set[seatId] = true;
     });
     return set;
-  }, [query, names]);
+  }, [query, seating, guestById]);
+
+  /* candidatos a importar desde el plano viejo de localStorage */
+  const legacyPlan = useMemo(() => {
+    if (!legacyNames) return [];
+    const byName = new Map<string, ConfirmedGuest>();
+    guests.forEach((g) => byName.set(norm(g.full_name), g));
+    const taken = new Set<string>();
+    const out: { seat_id: string; guest_id: string }[] = [];
+    Object.entries(legacyNames).forEach(([seatId, name]) => {
+      if (!SEAT_INDEX[seatId] || seating[seatId]) return;
+      const g = typeof name === "string" ? byName.get(norm(name)) : undefined;
+      if (!g || taken.has(g.id) || seatedIds.has(g.id)) return;
+      taken.add(g.id);
+      out.push({ seat_id: seatId, guest_id: g.id });
+    });
+    return out;
+  }, [legacyNames, guests, seating, seatedIds]);
+
+  const dropLegacy = () => {
+    try {
+      window.localStorage.removeItem(LEGACY_KEY);
+    } catch {
+      /* almacenamiento no disponible */
+    }
+    setLegacyNames(null);
+  };
+
+  /* aplica el cambio local y lo persiste; si falla, vuelve a pedirle el
+     plano al servidor en vez de revertir a un snapshot, que quedaria viejo
+     si otra accion cambio el plano mientras esta estaba en vuelo */
+  const run = (
+    next: Record<string, string>,
+    action: () => Promise<SeatingActionState>,
+    message?: string,
+  ) => {
+    setSeating(next);
+    startTransition(async () => {
+      const res = await action();
+      if (res.ok) setNote(message ?? res.message ?? "");
+      else {
+        setNote(res.error ?? "No se pudo guardar el cambio.");
+        router.refresh();
+      }
+    });
+  };
 
   const openSeat = (id: string) => {
     if (starMode) {
@@ -262,67 +279,86 @@ export function SeatingPlanClient({ guests }: { guests: ConfirmedGuest[] }) {
       return;
     }
     setEditing(id);
-    setDraft(names[id] || "");
   };
 
-  const commit = (id: string, value: string, advance: boolean) => {
-    const v = value.trim();
-    setNames((n) => {
-      const next = { ...n };
-      if (v) next[id] = v;
-      else delete next[id];
-      return next;
-    });
-    if (advance) {
-      const nx = SEATS[SEAT_INDEX[id].order + 1];
-      if (nx) {
-        setEditing(nx.id);
-        setDraft(names[nx.id] || "");
-        return;
-      }
-    }
+  const commit = (seatId: string, guestId: string) => {
     setEditing(null);
+    const current = seating[seatId] ?? "";
+    if (guestId === current) return;
+
+    if (!guestId) {
+      const next = { ...seating };
+      delete next[seatId];
+      run(next, () => clearSeatAction({ seat_id: seatId }));
+      return;
+    }
+
+    const next = { ...seating };
+    Object.keys(next).forEach((s) => {
+      if (next[s] === guestId) delete next[s];
+    });
+    next[seatId] = guestId;
+    run(next, () => assignSeatAction({ seat_id: seatId, guest_id: guestId }));
   };
 
   const assignGuest = (g: ConfirmedGuest) => {
-    const free = SEATS.find((s) => !(names[s.id] && names[s.id].trim()));
+    const free = SEATS.find((s) => !seating[s.id]);
     if (!free) {
       setNote("No quedan sillas libres.");
       return;
     }
-    setNames((n) => ({ ...n, [free.id]: g.full_name }));
-    setNote(
+    run(
+      { ...seating, [free.id]: g.id },
+      () => assignSeatAction({ seat_id: free.id, guest_id: g.id }),
       `${g.full_name} → puesto ${numbering === "global" ? free.num : free.code}.`,
     );
   };
 
   const assignAll = () => {
     if (!unseated.length) return;
-    setNames((n) => {
-      const next = { ...n };
-      let i = 0;
-      for (const s of SEATS) {
-        if (i >= unseated.length) break;
-        if (!next[s.id]) next[s.id] = unseated[i++].full_name;
-      }
-      setNote(
-        i < unseated.length
-          ? `Se sentaron ${i} invitados. Quedaron ${unseated.length - i} sin silla libre.`
-          : `Se sentaron ${i} invitados.`,
-      );
-      return next;
+    const assignments: { seat_id: string; guest_id: string }[] = [];
+    const next = { ...seating };
+    let i = 0;
+    for (const s of SEATS) {
+      if (i >= unseated.length) break;
+      if (next[s.id]) continue;
+      const g = unseated[i++];
+      next[s.id] = g.id;
+      assignments.push({ seat_id: s.id, guest_id: g.id });
+    }
+    if (!assignments.length) {
+      setNote("No quedan sillas libres.");
+      return;
+    }
+    const left = unseated.length - assignments.length;
+    run(
+      next,
+      () => assignManySeatsAction({ assignments }),
+      left > 0
+        ? `Se sentaron ${assignments.length} invitados. Quedaron ${left} sin silla libre.`
+        : undefined,
+    );
+  };
+
+  const importLegacy = () => {
+    if (!legacyPlan.length) return;
+    const next = { ...seating };
+    legacyPlan.forEach((a) => (next[a.seat_id] = a.guest_id));
+    // Solo se descarta el plano viejo si la importacion llego a la base.
+    run(next, async () => {
+      const res = await assignManySeatsAction({ assignments: legacyPlan });
+      if (res.ok) dropLegacy();
+      return res;
     });
   };
 
   const copyList = async () => {
     const txt = SEATS.map((s) => {
       const lbl = numbering === "global" ? s.num : s.code;
-      const name = names[s.id];
-      if (!name) return `${lbl}. —`;
-      const diet = guestByName.get(norm(name))?.dietary_restrictions;
-      return diet && diet.trim()
-        ? `${lbl}. ${name} (${diet.trim()})`
-        : `${lbl}. ${name}`;
+      const g = seating[s.id] ? guestById.get(seating[s.id]) : undefined;
+      if (!g) return `${lbl}. —`;
+      const diet = g.dietary_restrictions?.trim();
+      return diet ? `${lbl}. ${g.full_name} (${diet})` : `${lbl}. ${g.full_name}`;
     }).join("\n");
     try {
       await navigator.clipboard.writeText(txt);
@@ -338,10 +374,9 @@ export function SeatingPlanClient({ guests }: { guests: ConfirmedGuest[] }) {
       setTimeout(() => setConfirmReset(false), 4000);
       return;
     }
-    setNames({});
-    setStars({});
     setConfirmReset(false);
-    setNote("Plano vacío.");
+    setStars({});
+    run({}, () => clearAllSeatsAction());
   };
 
   useEffect(() => {
@@ -360,14 +395,14 @@ export function SeatingPlanClient({ guests }: { guests: ConfirmedGuest[] }) {
     seat: SeatDef;
     align?: "left" | "right";
   }) => {
-    const name = names[seat.id] || "";
+    const guestId = seating[seat.id] ?? "";
+    const guest = guestId ? guestById.get(guestId) : undefined;
+    const name = guest?.full_name ?? "";
     const isEditing = editing === seat.id;
     const isStar = !!stars[seat.id];
     const isMatch = matches ? !!matches[seat.id] : false;
     const dim = matches && !isMatch;
-    const diet = name
-      ? guestByName.get(norm(name))?.dietary_restrictions
-      : null;
+    const diet = guest?.dietary_restrictions;
     const hasDiet = !!(diet && diet.trim());
 
     const base: React.CSSProperties = {
@@ -376,7 +411,7 @@ export function SeatingPlanClient({ guests }: { guests: ConfirmedGuest[] }) {
       boxSizing: "border-box",
       borderRadius: 7,
       background: isStar ? "#F6EDD8" : C.ivory,
-      border: `1px ${name ? "solid" : "dashed"} ${isStar ? C.brass : name ? C.line : "#D6DDD5"}`,
+      border: `1px ${guestId ? "solid" : "dashed"} ${isStar ? C.brass : guestId ? C.line : "#D6DDD5"}`,
       display: "flex",
       alignItems: "center",
       justifyContent: "center",
@@ -389,27 +424,29 @@ export function SeatingPlanClient({ guests }: { guests: ConfirmedGuest[] }) {
     };
 
     if (isEditing) {
+      // Solo confirmados sin silla (mas el ocupante actual de este puesto).
+      const options = guests.filter(
+        (g) => !seatedIds.has(g.id) || g.id === guestId,
+      );
       return (
         <div
           style={{
             ...base,
-            cursor: "text",
+            cursor: "default",
             borderStyle: "solid",
             borderColor: C.wood,
             padding: 0,
           }}
         >
-          <input
+          <select
             autoFocus
-            value={draft}
-            list="plano-guest-names"
-            onChange={(e) => setDraft(e.target.value)}
-            onBlur={() => commit(seat.id, draft, false)}
+            value={guestId}
+            onChange={(e) => commit(seat.id, e.target.value)}
+            onBlur={() => setEditing(null)}
             onKeyDown={(e) => {
-              if (e.key === "Enter") commit(seat.id, draft, true);
               if (e.key === "Escape") setEditing(null);
             }}
-            placeholder={`Puesto ${label(seat)}`}
+            aria-label={`Puesto ${label(seat)}`}
             style={{
               width: "100%",
               height: SEAT_H - 2,
@@ -418,11 +455,19 @@ export function SeatingPlanClient({ guests }: { guests: ConfirmedGuest[] }) {
               background: "transparent",
               textAlign: "center",
               fontFamily: BODY,
-              fontSize: 13,
+              fontSize: 12.5,
               color: C.ink,
-              padding: "0 6px",
+              padding: "0 4px",
+              cursor: "pointer",
             }}
-          />
+          >
+            <option value="">— Libre —</option>
+            {options.map((g) => (
+              <option key={g.id} value={g.id}>
+                {g.full_name}
+              </option>
+            ))}
+          </select>
         </div>
       );
     }
@@ -635,12 +680,6 @@ export function SeatingPlanClient({ guests }: { guests: ConfirmedGuest[] }) {
         borderRadius: 8,
       }}
     >
-      <datalist id="plano-guest-names">
-        {guests.map((g) => (
-          <option key={g.id} value={g.full_name} />
-        ))}
-      </datalist>
-
       {!clean && (
         <div
           style={{
@@ -667,6 +706,7 @@ export function SeatingPlanClient({ guests }: { guests: ConfirmedGuest[] }) {
             >
               {guests.length - unseated.length} de {guests.length} confirmados
               sentados · {TOTAL_SEATS - filled} sillas libres de {TOTAL_SEATS}
+              {pending ? " · guardando…" : ""}
             </span>
             <input
               value={query}
@@ -762,6 +802,29 @@ export function SeatingPlanClient({ guests }: { guests: ConfirmedGuest[] }) {
             </span>
           </div>
 
+          {legacyPlan.length > 0 && (
+            <div
+              style={{
+                marginTop: 10,
+                display: "flex",
+                alignItems: "center",
+                gap: 8,
+                flexWrap: "wrap",
+              }}
+            >
+              <span style={{ fontSize: 12, color: C.wood }}>
+                Hay un plano guardado en este navegador con {legacyPlan.length}{" "}
+                puestos que coinciden con invitados confirmados.
+              </span>
+              <button style={btn(true)} onClick={importLegacy}>
+                Importar a la base
+              </button>
+              <button style={btn(false)} onClick={dropLegacy}>
+                Descartar
+              </button>
+            </div>
+          )}
+
           {panel === "guests" && (
             <div style={{ marginTop: 10 }}>
               <div
@@ -795,7 +858,7 @@ export function SeatingPlanClient({ guests }: { guests: ConfirmedGuest[] }) {
                 }}
               >
                 {guests.map((g) => {
-                  const seated = seatedSet.has(norm(g.full_name));
+                  const seated = seatedIds.has(g.id);
                   const diet = g.dietary_restrictions?.trim();
                   return (
                     <button
@@ -955,9 +1018,9 @@ export function SeatingPlanClient({ guests }: { guests: ConfirmedGuest[] }) {
             padding: "0 16px 28px",
           }}
         >
-          Toca una silla para escribir el nombre. Enter guarda y salta a la
-          siguiente. El punto dorado marca preferencia alimentaria (pasa el
-          cursor para verla).
+          Toca una silla y elige un invitado confirmado de la lista. Cada cambio
+          se guarda en la base. El punto dorado marca preferencia alimentaria
+          (pasa el cursor para verla).
         </div>
       )}
     </div>
