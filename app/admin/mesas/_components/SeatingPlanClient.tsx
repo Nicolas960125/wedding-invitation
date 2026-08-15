@@ -88,13 +88,15 @@ function dietKind(raw: string | null | undefined): DietKind | null {
   if (!d) return null;
   // "No huevo" o "No piña" son restricciones reales: solo se descarta el
   // texto que en si mismo dice que no hay ninguna.
-  if (/^ningun[oa]/.test(d)) return null;
+  if (/^ning[uú]n[oa]?/.test(d)) return null;
   if (/^(nada|no|n\/a|na|-|\.)$/.test(d)) return null;
+  // La alergia va primero: si alguien es vegetariano y ademas alergico, la
+  // silla muestra un solo icono y tiene que ser el de la alerta.
+  if (/alergi|al[eé]rgic|marisco|frutos secos/.test(d)) return "alergia";
   if (/vegan|vegetarian/.test(d)) return "veg";
   if (/pesquetarian|pescetarian|pescatarian/.test(d)) return "pescado";
   if (/carnes? roja|carne de res|solo pollo|s[oó]lo pollo|ni cerdo|no cerdo/.test(d))
     return "pollo";
-  if (/alergi|al[eé]rgic|marisco|frutos secos/.test(d)) return "alergia";
   return "otro";
 }
 
@@ -929,8 +931,7 @@ export function SeatingPlanClient({
               >
                 <span style={{ fontSize: 12, color: C.muted }}>
                   {unseated.length} sin silla · {withDiet.length} con
-                  preferencia alimentaria (
-                  <span style={{ color: C.brass }}>●</span> en el plano)
+                  preferencia alimentaria, marcada con su icono en el plano
                 </span>
                 {unseated.length > 0 && (
                   <button style={btn(true)} onClick={assignAll}>
