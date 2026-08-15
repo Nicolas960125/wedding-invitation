@@ -184,3 +184,46 @@
   --input: oklch(0.86 0.025 115);
   --ring: oklch(0.62 0.085 118);
 }
+
+/* Impresion del plano de mesas (/admin/mesas): deja solo el plano en la
+   hoja y conserva los fondos, que por defecto el navegador no imprime. */
+@media print {
+  @page {
+    size: A4 portrait;
+    margin: 8mm;
+  }
+
+  body {
+    background: #fff;
+  }
+
+  .print-hidden {
+    display: none !important;
+  }
+
+  .print-main {
+    max-width: none !important;
+    margin: 0 !important;
+    padding: 0 !important;
+  }
+
+  .print-area {
+    margin: 0 !important;
+    min-height: 0 !important;
+    border-radius: 0 !important;
+  }
+
+  .print-stage {
+    overflow: visible !important;
+    padding: 0 !important;
+  }
+
+  .print-keep {
+    break-inside: avoid;
+  }
+
+  * {
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+}
