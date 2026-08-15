@@ -97,6 +97,7 @@ export function SeatingPlanClient({
 
   const stageRef = useRef<HTMLDivElement>(null);
   const planRef = useRef<HTMLDivElement>(null);
+  const headerRef = useRef<HTMLDivElement>(null);
   const saveTimer = useRef<ReturnType<typeof setTimeout> | undefined>(
     undefined,
   );
@@ -367,7 +368,10 @@ export function SeatingPlanClient({
     const naturalH = rect.height / scale;
     const pageW = ((210 - 16) / 25.4) * 96; // A4 menos los margenes, en px
     const pageH = ((297 - 16) / 25.4) * 96;
-    const fit = Math.min(pageW / naturalW, pageH / naturalH, 1);
+    // El titulo y el subtitulo se imprimen arriba del plano y no los afecta
+    // el zoom, asi que su alto sale del espacio disponible para el plano.
+    const headerH = headerRef.current?.getBoundingClientRect().height ?? 0;
+    const fit = Math.min(pageW / naturalW, (pageH - headerH) / naturalH, 1);
     setPrinting(scale);
     setScale(Math.max(0.2, Math.floor(fit * 100) / 100));
   };
@@ -974,6 +978,7 @@ export function SeatingPlanClient({
 
       {/* encabezado del plano */}
       <div
+        ref={headerRef}
         style={{
           textAlign: "center",
           padding: clean ? "28px 16px 6px" : "22px 16px 6px",
