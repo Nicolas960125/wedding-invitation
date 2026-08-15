@@ -91,10 +91,12 @@ export function SeatingPlanClient({
   const [legacyNames, setLegacyNames] = useState<Record<string, string> | null>(
     null,
   );
+  const [printing, setPrinting] = useState<number | null>(null);
   const [pending, startTransition] = useTransition();
   const router = useRouter();
 
   const stageRef = useRef<HTMLDivElement>(null);
+  const planRef = useRef<HTMLDivElement>(null);
   const saveTimer = useRef<ReturnType<typeof setTimeout> | undefined>(
     undefined,
   );
@@ -351,6 +353,41 @@ export function SeatingPlanClient({
       return res;
     });
   };
+
+  /* Ajusta el plano a una hoja A4 y abre el dialogo de impresion, donde el
+     navegador ofrece "Guardar como PDF". Se restaura el zoom al cerrarlo. */
+  const exportPdf = () => {
+    const el = planRef.current;
+    if (!el) {
+      window.print();
+      return;
+    }
+    const rect = el.getBoundingClientRect();
+    const naturalW = rect.width / scale;
+    const naturalH = rect.height / scale;
+    const pageW = ((210 - 16) / 25.4) * 96; // A4 menos los margenes, en px
+    const pageH = ((297 - 16) / 25.4) * 96;
+    const fit = Math.min(pageW / naturalW, pageH / naturalH, 1);
+    setPrinting(scale);
+    setScale(Math.max(0.2, Math.floor(fit * 100) / 100));
+  };
+
+  useEffect(() => {
+    if (printing === null) return;
+    // afterprint y no la linea siguiente a print(): en Firefox print() no
+    // bloquea, asi que restaurar de inmediato alteraria la vista previa.
+    const restore = () => {
+      setScale(printing);
+      setPrinting(null);
+    };
+    window.addEventListener("afterprint", restore, { once: true });
+    // Un respiro para que el plano se re-renderice con el zoom de la hoja.
+    const id = window.setTimeout(() => window.print(), 120);
+    return () => {
+      window.clearTimeout(id);
+      window.removeEventListener("afterprint", restore);
+    };
+  }, [printing]);
 
   const copyList = async () => {
     const txt = SEATS.map((s) => {
@@ -671,6 +708,7 @@ export function SeatingPlanClient({
 
   return (
     <div
+      className="print-area"
       style={{
         background: C.paper,
         minHeight: "100vh",
@@ -682,6 +720,7 @@ export function SeatingPlanClient({
     >
       {!clean && (
         <div
+          className="print-hidden"
           style={{
             borderBottom: `1px solid ${C.line}`,
             background: C.paperDeep,
@@ -758,6 +797,9 @@ export function SeatingPlanClient({
             </button>
             <button style={btn(clean)} onClick={() => setClean(true)}>
               Modo captura
+            </button>
+            <button style={btn(false)} onClick={exportPdf}>
+              Exportar PDF
             </button>
             <button
               style={{
@@ -915,6 +957,7 @@ export function SeatingPlanClient({
 
       {clean && (
         <button
+          className="print-hidden"
           style={{
             ...btn(false),
             position: "fixed",
@@ -989,9 +1032,11 @@ export function SeatingPlanClient({
       {/* plano */}
       <div
         ref={stageRef}
+        className="print-stage"
         style={{ padding: "10px 12px 40px", overflowX: "auto" }}
       >
         <div
+          ref={planRef}
           style={{
             zoom: scale,
             display: "flex",
@@ -1004,13 +1049,16 @@ export function SeatingPlanClient({
           }}
         >
           {TABLES.map((t) => (
-            <div key={t.key}>{ImperialTable({ t })}</div>
+            <div key={t.key} className="print-keep">
+              {ImperialTable({ t })}
+            </div>
           ))}
         </div>
       </div>
 
       {!clean && (
         <div
+          className="print-hidden"
           style={{
             textAlign: "center",
             fontSize: 11.5,

@@ -9,7 +9,7 @@ export default function AdminLayout({
 }) {
   return (
     <div className="min-h-screen">
-      <header className="bg-card sticky top-0 z-10 border-b">
+      <header className="bg-card print-hidden sticky top-0 z-10 border-b">
         <div className="mx-auto flex max-w-5xl items-center justify-between px-4 py-3">
           <Link href="/admin" className="font-serif text-lg">
             Admin
@@ -44,7 +44,7 @@ export default function AdminLayout({
           </nav>
         </div>
       </header>
-      <main className="mx-auto max-w-5xl px-4 py-8">{children}</main>
+      <main className="print-main mx-auto max-w-5xl px-4 py-8">{children}</main>
     </div>
   );
 }
