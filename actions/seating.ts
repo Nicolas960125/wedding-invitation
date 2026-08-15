@@ -5,7 +5,7 @@ import { z } from "zod";
 import { createClient } from "@/lib/supabase/server";
 import { getAdminClient } from "@/lib/supabase/admin";
 import { isAuthorizedAdmin } from "@/lib/auth/isAdmin";
-import { isSeatId, TOTAL_SEATS } from "@/lib/seating";
+import { isSeatId, isFixedSeat, TOTAL_SEATS } from "@/lib/seating";
 
 export type SeatingActionState = {
   ok: boolean;
@@ -13,7 +13,10 @@ export type SeatingActionState = {
   error?: string;
 };
 
-const seatId = z.string().refine(isSeatId, "Puesto invalido");
+const seatId = z
+  .string()
+  .refine(isSeatId, "Puesto invalido")
+  .refine((v) => !isFixedSeat(v), "Puesto reservado");
 const guestId = z.string().uuid();
 
 const assignSchema = z.object({
